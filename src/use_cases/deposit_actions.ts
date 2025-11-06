@@ -6,6 +6,7 @@ import { return_fail } from "@src/utils.js";
 import { UserLogic } from "@src/logic/user.js";
 import { DepositsTrackerEvent } from "@src/logic/deposits_tracker.js";
 import { Deposit, DepositChange } from "@src/fetchers/deposits_fetcher.js";
+import { TransactionsFetchOptions } from "@src/interfaces/transactions_storage";
 
 
 export class DepositActions {
@@ -31,7 +32,7 @@ export class DepositActions {
     static async transactions_requested(
         agent: IUserAgent,
         journal: Journal,
-        limit?: number
+        opts: TransactionsFetchOptions = {}
     ): Promise<Status> {
         const user = Runtime.get_instance().get_user(agent.userid());
         journal.log().info(`transactions_requested by ${user?.data.tgid}`);
@@ -44,7 +45,7 @@ export class DepositActions {
         }
 
         const transactions = await Runtime.get_instance()
-            .get_transactions_storage()?.fetch_transactions(user.data.tgid, { limit });
+            .get_transactions_storage()?.fetch_transactions(user.data.tgid, opts);
         return await agent.as_deposit_owner().send_transactions_info(transactions);
     }
 

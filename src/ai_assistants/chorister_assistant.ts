@@ -7,6 +7,7 @@ import { Runtime } from "@src/runtime.js";
 import { Scores } from "@src/database.js";
 import { Journal } from "@src/journal.js";
 import { return_fail } from "@src/utils.js";
+import { TransactionsFetchOptions } from "@src/interfaces/transactions_storage";
 
 const fails_instruction = `
 You are a friendly counsellor for choristers. But bot didn't manage to download the document,
@@ -27,7 +28,21 @@ type Response =
   | { what: "already_paid" }
   | { what: "top_up", amount: number, original_message: string }
   | { what: "feedback", details?: string }
-  | { what: "get_transactions"};
+  | { what: "get_transactions", filters?: {
+    limit?: number;
+    order?: "asc" | "desc";
+
+    from_date?: Date;
+    to_date?: Date;
+
+    type?: "balance" | "membership";
+
+    balance_change?:{
+        equals?: number;
+        greater_than?: number;
+        less_than?: number;
+    }
+}};
 
 Action MUST have a 'what' field with one of the following values:
   - "message": use when you need to send a message to the user in order to clarify something OR to provide a response to the user
@@ -93,11 +108,31 @@ Examples:
 
 ## get_transactions
 Action MUST be emitted if user asks for their transaction history.
+You may provide optional "filters" field with the following optional fields:
+- limit: number - maximum number of transactions to fetch
+- order: "asc" | "desc" - order of transactions by date
+- from_date: Date - fetch transactions starting from this date
+- to_date: Date - fetch transactions up to this date
+- type: string - filter transactions by type, can be "balance" or "membership"
+    use "balance" for balance changes and "membership" for membership fee payments.
+- balance_change: object - filter transactions by balance change with the following optional fields:
+    - equals: number - fetch transactions where balance before change equals this value
+    - greater_than: number - fetch transactions where balance before change is greater than this value
+    - less_than: number - fetch transactions where balance before change is less than this value
+    if user asks withdrawals, use balance_change with negative values.
 Examples:
 1. User: "What is my transaction history?" Action: { what: "get_transactions" }
 2. User: "Show me my past payments." Action: { what: "get_transactions" }
 3. User: "Покажи мне историю транзакций." Action: { what: "get_transactions" }
 4. User: "Мне нужна информация о транзакциях." Action: { what: "get_transactions" }
+5. User: "Show me my last 5 transactions." Action: { what: "get_transactions", filters: { limit: 5 } }
+6. User: "Покажи мне последние 10 транзакций." Action: { what: "get_transactions", filters: { limit: 10 } }
+7. User: "Show me my transactions from last month." Action: { what: "get_transactions", 
+    filters: { from_date: "2024-05-01T00:00:00.000Z", to_date: "2024-05-31T23:59:59.999Z" } }
+8. User: "Покажи мне 5 транзакции за прошлый месяц." Action: { what: "get_transactions", 
+    filters: { from_date: "2024-05-01T00:00:00.000Z", to_date: "2024-05-31T23:59:59.999Z", limit: 5 } }
+9. User: "Был ли перевод на 300 лари?" Action: { what: "get_transactions", 
+    filters: { balance_change: { equals: 300 } } }
 
 ## Other questions
 If user just greets you, just greet them back, without any other actions.
@@ -116,7 +151,7 @@ export type Response =
   | { what: "already_paid" }
   | { what: "top_up", amount: number, original_message: string }
   | { what: "feedback", details?: string }
-  | { what: "get_transactions" };
+  | { what: "get_transactions", filters?: TransactionsFetchOptions };
 
 abstract class IAssistant {
     // Send message to assistant and waits for answer
@@ -203,7 +238,7 @@ export class ChoristerAssistant {
         }
 
         const message = [
-            instruction.replace("%%scores%%", this.get_scores_table_csv())
+            instruction.replace("%%scores%%", this.get_scores_table_csv()).trim(),
         ].join("\n\n");
 
         this.journal.log().debug("assistant instructions:\n", message);
