@@ -8,6 +8,7 @@ import { Scores } from "@src/database.js";
 import { Journal } from "@src/journal.js";
 import { return_fail } from "@src/utils.js";
 import { TransactionsFetchOptions } from "@src/interfaces/transactions_storage";
+import { safeParseResponse } from "./response_schemas";
 
 const fails_instruction = `
 You are a friendly counsellor for choristers. But bot didn't manage to download the document,
@@ -142,7 +143,7 @@ If user asks you something, you are allowed to:
 3. speak about everything said before in the conversation.
 Politely refuse to answer any other questions.
 `
-
+// todo: whats better to dublicate Response type here or import it from response_schemas.ts?
 export type Response =
   | { what: "message", text: string }
   | { what: "download_scores", filename: string }
@@ -279,7 +280,12 @@ class VanillaAssistant implements IAssistant {
             return send_status.wrap("vanilla: failed to send message");
         }
         const response = send_status.value!;
-        const response_obj: Response = JSON.parse(response);
+        const response_validation = safeParseResponse(response);
+        if (!response_validation.ok) {
+            this.journal.log().warn(`vanilla: invalid response format: ${JSON.stringify(response_validation.error)}`);
+            return return_fail("vanilla: invalid response format", this.journal.log());
+        }
+        const response_obj = response_validation.value as Response;
         if (response_obj.what === "message") {
             const add_status = await this.add_response(response_obj.text);
             if (!add_status.ok()) {
