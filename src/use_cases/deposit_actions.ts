@@ -6,8 +6,7 @@ import { return_fail } from "@src/utils.js";
 import { UserLogic } from "@src/logic/user.js";
 import { DepositsTrackerEvent } from "@src/logic/deposits_tracker.js";
 import { Deposit, DepositChange } from "@src/fetchers/deposits_fetcher.js";
-import { TransactionsFetchOptions } from "@src/interfaces/transactions_storage";
-
+import { TransactionsFetchOptions } from "@src/ai_assistants/response_schemas.js";
 
 export class DepositActions {
 

@@ -1,3 +1,4 @@
+import { TransactionsFetchOptions } from "@src/ai_assistants/response_schemas";
 
 export type Transaction = {
     date: Date,
@@ -6,22 +7,6 @@ export type Transaction = {
     before: number,
     after: number,
     membership_month?: Date,
-};
-
-export type TransactionsFetchOptions = {
-    limit?: number;
-    order?: "asc" | "desc";
-
-    from_date?: Date;
-    to_date?: Date;
-
-    type?: "balance" | "membership";
-
-    balance_change?:{
-        equals?: number;
-        greater_than?: number;
-        less_than?: number;
-    }
 };
 
 export interface ITransactionsStorage {

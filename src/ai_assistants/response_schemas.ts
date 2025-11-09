@@ -3,24 +3,31 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 
 export const TransactionTypeSchema = z.enum(["balance", "membership"]);
 
-export const IsoDateString = z.string().datetime().optional();
-
 export const BalanceChangeSchema = z.object({
-  equal: z.number().finite().optional(),
-  greater: z.number().finite().optional(),
-  less: z.number().finite().optional(),
+  equals: z.number().finite().optional(),
+  greater_than: z.number().finite().optional(),
+  less_than: z.number().finite().optional(),
 })
   // equal does not combine with greater/less
-  .refine(o => o.equal === undefined || (o.greater === undefined && o.less === undefined), {
+  .refine(o => o.equals === undefined || (o.greater_than === undefined && o.less_than === undefined), {
     message: "balance_change.equal does not combine with greater/less",
   });
+
+const IsoDateTimeAsDate = z.string().datetime().transform((s, ctx) => {
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Invalid date-time" });
+    return z.NEVER;
+  }
+  return d;
+});
 
 export const TransactionFetchOptionsSchema = z.object({
   limit: z.number().int().positive().max(500).optional(),
   order: z.enum(["asc", "desc"]).optional(),
-  from_date: IsoDateString,
-  to_date: IsoDateString,
-  type: z.union([TransactionTypeSchema, z.array(TransactionTypeSchema)]).optional(),
+  from_date: IsoDateTimeAsDate.optional(),
+  to_date: IsoDateTimeAsDate.optional(),
+  type: TransactionTypeSchema.optional(),
   balance_change: BalanceChangeSchema.optional(),
 })
   // from_date <= to_date
@@ -51,7 +58,7 @@ export const ResponseSchema = z.discriminatedUnion("what", [
 ]);
 
 export type Response = z.infer<typeof ResponseSchema>;
-export type TransactionFetchOptions = z.infer<typeof TransactionFetchOptionsSchema>;
+export type TransactionsFetchOptions = z.infer<typeof TransactionFetchOptionsSchema>;
 
 /** Safely parse a response */
 export function safeParseResponse(raw: unknown) {

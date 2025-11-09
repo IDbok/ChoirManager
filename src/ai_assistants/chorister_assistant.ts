@@ -7,8 +7,8 @@ import { Runtime } from "@src/runtime.js";
 import { Scores } from "@src/database.js";
 import { Journal } from "@src/journal.js";
 import { return_fail } from "@src/utils.js";
-import { TransactionsFetchOptions } from "@src/interfaces/transactions_storage";
-import { safeParseResponse } from "./response_schemas";
+import { safeParseResponse, Response, getResponseJsonSchema } from "./response_schemas";
+import { schemaToTypes } from "@src/tools/response_schema_validation";
 
 const fails_instruction = `
 You are a friendly counsellor for choristers. But bot didn't manage to download the document,
@@ -19,31 +19,12 @@ Try to use informal and joking language.
 
 const instruction = `
 You are a friendly counsellor for choristers. Always speak in a warm tone and never end your response with an extra question.
+
+Now is %%current_date%%.
+
 Output MUST be a valid JSON object of type 'Response' according to the following type definition:
 
-type Response =
-  | { what: "message", text: string }
-  | { what: "download_scores", filename: string }
-  | { what: "scores_list" }
-  | { what: "get_deposit_info" }
-  | { what: "already_paid" }
-  | { what: "top_up", amount: number, original_message: string }
-  | { what: "feedback", details?: string }
-  | { what: "get_transactions", filters?: {
-    limit?: number;
-    order?: "asc" | "desc";
-
-    from_date?: Date;
-    to_date?: Date;
-
-    type?: "balance" | "membership";
-
-    balance_change?:{
-        equals?: number;
-        greater_than?: number;
-        less_than?: number;
-    }
-}};
+%%response_schema%%
 
 Action MUST have a 'what' field with one of the following values:
   - "message": use when you need to send a message to the user in order to clarify something OR to provide a response to the user
@@ -51,7 +32,7 @@ Action MUST have a 'what' field with one of the following values:
   - "scores_list": use when user asks for scores without specifying which ones
   - "get_deposit_info": use when user asks for deposit/membership info
   - "already_paid": use when user tells that they already paid membership fee
-  - "top-up": use when user says that they has deposited the money
+  - "top_up": use when user says that they has deposited the money
   - "feedback": use for complaints or any feedback that chorister wants to share with the org group
   - "get_transactions": use when user asks for their transaction history
 
@@ -69,10 +50,10 @@ Use the same language in which the question was asked.
 Если общение идёт на русском, обращайся на "ты".
 
 ## download_scores
-Action MUST be emitted if user requrested specific scores. "what" field MUST be "download_scores".
+Action MUST be emitted if user requested specific scores. "what" field MUST be "download_scores".
 "filename" field MUST be a non-empty string that contains scores file name.
-User may ask to download scores by it's name, or hint, or author. Look thorugh the list
-of scores above and fine the most relevant score. Use 'file' column to fill "filename"
+User may ask to download scores by its name, or hint, or author. Look through the list
+of scores above and find the most relevant score. Use 'file' column to fill "filename"
 field of the action.
 
 %%scores%%
@@ -109,6 +90,7 @@ Examples:
 
 ## get_transactions
 Action MUST be emitted if user asks for their transaction history.
+Set "filters" field according to last user's request.
 You may provide optional "filters" field with the following optional fields:
 - limit: number - maximum number of transactions to fetch
 - order: "asc" | "desc" - order of transactions by date
@@ -128,10 +110,10 @@ Examples:
 4. User: "Мне нужна информация о транзакциях." Action: { what: "get_transactions" }
 5. User: "Show me my last 5 transactions." Action: { what: "get_transactions", filters: { limit: 5 } }
 6. User: "Покажи мне последние 10 транзакций." Action: { what: "get_transactions", filters: { limit: 10 } }
-7. User: "Show me my transactions from last month." Action: { what: "get_transactions", 
-    filters: { from_date: "2024-05-01T00:00:00.000Z", to_date: "2024-05-31T23:59:59.999Z" } }
-8. User: "Покажи мне 5 транзакции за прошлый месяц." Action: { what: "get_transactions", 
-    filters: { from_date: "2024-05-01T00:00:00.000Z", to_date: "2024-05-31T23:59:59.999Z", limit: 5 } }
+7. User: "Show me my transactions from february." Action: { what: "get_transactions",
+    filters: { from_date: "2024-02-01T00:00:00.000Z", to_date: "2024-02-29T23:59:59.999Z" } }
+8. User: "Покажи мне 5 последних транзакций." Action: { what: "get_transactions",
+    filters: { limit: 5 } }
 9. User: "Был ли перевод на 300 лари?" Action: { what: "get_transactions", 
     filters: { balance_change: { equals: 300 } } }
 
@@ -143,16 +125,6 @@ If user asks you something, you are allowed to:
 3. speak about everything said before in the conversation.
 Politely refuse to answer any other questions.
 `
-// todo: whats better to dublicate Response type here or import it from response_schemas.ts?
-export type Response =
-  | { what: "message", text: string }
-  | { what: "download_scores", filename: string }
-  | { what: "scores_list" }
-  | { what: "get_deposit_info" }
-  | { what: "already_paid" }
-  | { what: "top_up", amount: number, original_message: string }
-  | { what: "feedback", details?: string }
-  | { what: "get_transactions", filters?: TransactionsFetchOptions };
 
 abstract class IAssistant {
     // Send message to assistant and waits for answer
@@ -239,7 +211,11 @@ export class ChoristerAssistant {
         }
 
         const message = [
-            instruction.replace("%%scores%%", this.get_scores_table_csv()).trim(),
+            instruction
+                .replace("%%scores%%", this.get_scores_table_csv())
+                .replace("%%response_schema%%", schemaToTypes(this.get_response_schema()))
+                .replace("%%current_date%%", new Date().toISOString())
+                .trim(),
         ].join("\n\n");
 
         this.journal.log().debug("assistant instructions:\n", message);
@@ -260,7 +236,18 @@ export class ChoristerAssistant {
         }
         return table.join("\n");
     }
-}
+
+    private cachedResponseSchemaStr: string | null = null;
+
+    private get_response_schema(): string {
+        if (this.cachedResponseSchemaStr) {
+            return this.cachedResponseSchemaStr;
+        }
+        this.cachedResponseSchemaStr = JSON.stringify(
+            getResponseJsonSchema().definitions?.Response, null, 2);
+        return this.cachedResponseSchemaStr;
+    }
+}  
 
 class VanillaAssistant implements IAssistant {
     private chat: ChatWithHistory;
@@ -281,6 +268,7 @@ class VanillaAssistant implements IAssistant {
         }
         const response = send_status.value!;
         const response_validation = safeParseResponse(response);
+        console.log("Parsed assistant response:", response_validation);
         if (!response_validation.ok) {
             this.journal.log().warn(`vanilla: invalid response format: ${JSON.stringify(response_validation.error)}`);
             return return_fail("vanilla: invalid response format", this.journal.log());

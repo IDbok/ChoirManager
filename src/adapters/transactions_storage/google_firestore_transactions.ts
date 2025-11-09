@@ -1,4 +1,5 @@
-import { Transaction, TransactionsFetchOptions } from "@src/interfaces/transactions_storage.js";
+import { Transaction } from "@src/interfaces/transactions_storage.js";
+import { TransactionsFetchOptions } from "@src/ai_assistants/response_schemas.js";
 import { ITransactionsStorage } from "@src/interfaces/transactions_storage.js";
 import { GoogleAuth } from "@src/api/google_auth.js";
 import {  Firestore,  CollectionReference, } from "@google-cloud/firestore";
