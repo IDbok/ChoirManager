@@ -11,3 +11,4 @@ config/tgbot_token
 config/botcfg_local.json
 config/runtime.json
 src/tools/transactions.seed.json
+src/tools/fetch_transactions_filter_test.ts
